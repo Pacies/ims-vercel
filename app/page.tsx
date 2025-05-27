@@ -8,9 +8,9 @@ export default function Home() {
   const router = useRouter()
 
   useEffect(() => {
-    // Redirect to dashboard after a brief loading screen
+    // Redirect to landing page after a brief loading screen
     const timer = setTimeout(() => {
-      router.push("/dashboard")
+      router.push("/landing")
     }, 1500)
 
     return () => clearTimeout(timer)
