@@ -3,18 +3,25 @@
 import type React from "react"
 import { useState, useEffect } from "react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { motion } from "framer-motion"
-import { Search } from "lucide-react"
+import { Search, LogOut } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { cn } from "@/lib/utils"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import type { User } from "@/lib/database"
+import { Package, BarChart3, Users, Home, Wrench } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
 import { addActivity } from "@/lib/activity-store"
 
 export default function Navbar() {
   const [searchTerm, setSearchTerm] = useState("")
   const [currentTime, setCurrentTime] = useState("")
+  const [currentUser, setCurrentUser] = useState<User | null>(null)
   const pathname = usePathname()
+  const router = useRouter()
+  const { toast } = useToast()
 
   useEffect(() => {
     const updateTime = () => {
@@ -24,6 +31,17 @@ export default function Navbar() {
 
     updateTime()
     const interval = setInterval(updateTime, 1000)
+
+    // Get current user from session storage for now
+    const userStr = sessionStorage.getItem("currentUser")
+    if (userStr) {
+      try {
+        const user = JSON.parse(userStr)
+        setCurrentUser(user)
+      } catch (error) {
+        console.error("Error parsing user data:", error)
+      }
+    }
 
     return () => clearInterval(interval)
   }, [])
@@ -37,12 +55,32 @@ export default function Navbar() {
     }
   }
 
+  const handleLogout = () => {
+    // Clear session storage
+    sessionStorage.removeItem("currentUser")
+
+    // Show success message
+    toast({
+      title: "Logged out successfully",
+      description: "You have been logged out of your account.",
+    })
+
+    // Redirect to login page
+    router.push("/login")
+  }
+
+  // Define nav items based on user type
   const navItems = [
-    { name: "Dashboard", path: "/dashboard" },
-    { name: "Inventory", path: "/inventory" },
-    { name: "Products", path: "/products" },
-    { name: "Reports", path: "/reports" },
+    { name: "Dashboard", path: "/dashboard", icon: Home },
+    { name: "Raw Materials", path: "/inventory", icon: Wrench },
+    { name: "Products", path: "/products", icon: Package },
+    { name: "Reports", path: "/reports", icon: BarChart3 },
   ]
+
+  // Add manage users link only for admin users
+  if (currentUser?.user_type === "admin" || currentUser?.type === "admin") {
+    navItems.push({ name: "Manage Users", path: "/manage-user", icon: Users })
+  }
 
   return (
     <motion.nav
@@ -99,10 +137,23 @@ export default function Navbar() {
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
             </form>
 
-            <Avatar className="border-2 border-blue-500">
-              <AvatarImage src="/placeholder.svg?height=40&width=40" alt="User" />
-              <AvatarFallback>2K</AvatarFallback>
-            </Avatar>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Avatar className="border-2 border-blue-500 cursor-pointer">
+                  <AvatarImage src="/placeholder.svg?height=40&width=40" alt="User" />
+                  <AvatarFallback>{currentUser?.username?.substring(0, 2).toUpperCase() || "2K"}</AvatarFallback>
+                </Avatar>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <div className="px-2 py-1.5 text-sm font-medium text-gray-500">
+                  {currentUser?.username || "User"} ({currentUser?.user_type || currentUser?.type || "guest"})
+                </div>
+                <DropdownMenuItem onClick={handleLogout} className="text-red-600 cursor-pointer">
+                  <LogOut className="h-4 w-4 mr-2" />
+                  Logout
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </div>

@@ -1,237 +1,289 @@
 "use client"
-
-import type React from "react"
 import { useState } from "react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { addInventoryItem, addActivity } from "@/lib/database"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Plus, ArrowLeft } from "lucide-react"
+import { addInventoryItem, updateInventoryItem, getInventoryItems, type InventoryItem } from "@/lib/database"
+import { useToast } from "@/hooks/use-toast"
 
 interface AddItemModalProps {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  onItemAdded?: () => void
+  onItemAdded: (newItem: InventoryItem) => void
+  onItemUpdated: (updatedItem: InventoryItem) => void // Add this prop
 }
 
-export default function AddItemModal({ open, onOpenChange, onItemAdded }: AddItemModalProps) {
-  const [formData, setFormData] = useState({
-    name: "",
-    description: "",
-    category: "",
-    price: "",
-    stock: "1",
-    sku: "",
-    image_url: "",
-  })
-  const [loading, setLoading] = useState(false)
+export default function AddItemModal({ onItemAdded, onItemUpdated }: AddItemModalProps) {
+  const [isOpen, setIsOpen] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
+  const [step, setStep] = useState(1) // 1: product type, 2: quantity and price
+  const [selectedProduct, setSelectedProduct] = useState("")
+  const [customProduct, setCustomProduct] = useState("")
+  const [quantity, setQuantity] = useState("")
+  const [price, setPrice] = useState("")
+  const [showCustomInput, setShowCustomInput] = useState(false)
+  const { toast } = useToast()
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target
-    setFormData((prev) => ({ ...prev, [name]: value }))
+  const productTypes = [
+    { name: "T-Shirt", category: "Top" },
+    { name: "Polo Shirt", category: "Top" },
+    { name: "Blouse", category: "Top" },
+    { name: "Tank Top", category: "Top" },
+    { name: "Pajama", category: "Bottom" },
+    { name: "Shorts", category: "Bottom" },
+    { name: "Pants", category: "Bottom" },
+    { name: "Skirt", category: "Bottom" },
+    { name: "Others", category: "" },
+  ]
+
+  const resetForm = () => {
+    setStep(1)
+    setSelectedProduct("")
+    setCustomProduct("")
+    setQuantity("")
+    setPrice("")
+    setShowCustomInput(false)
   }
 
-  const handleSelectChange = (name: string, value: string) => {
-    setFormData((prev) => ({ ...prev, [name]: value }))
+  const handleProductSelect = (productName: string, category: string) => {
+    if (productName === "Others") {
+      setShowCustomInput(true)
+    } else {
+      setSelectedProduct(productName)
+      setStep(2)
+    }
   }
 
-  const generateSKU = () => {
-    const prefix = formData.category.substring(0, 3).toUpperCase()
-    const random = Math.floor(Math.random() * 10000)
-      .toString()
-      .padStart(4, "0")
-    return `${prefix}-${random}`
+  const handleCustomProductSubmit = () => {
+    if (customProduct.trim()) {
+      setSelectedProduct(customProduct.trim())
+      setStep(2)
+      setShowCustomInput(false)
+    }
   }
 
-  const determineStatus = (stock: number) => {
-    if (stock === 0) return "out-of-stock"
-    if (stock <= 10) return "low-stock"
-    return "in-stock"
+  const getProductCategory = (productName: string) => {
+    const product = productTypes.find((p) => p.name === productName)
+    if (product && product.category) {
+      return product.category
+    }
+    // For custom products, determine category based on common patterns
+    const lowerName = productName.toLowerCase()
+    if (
+      lowerName.includes("shirt") ||
+      lowerName.includes("blouse") ||
+      lowerName.includes("top") ||
+      lowerName.includes("polo")
+    ) {
+      return "Top"
+    } else if (
+      lowerName.includes("pant") ||
+      lowerName.includes("short") ||
+      lowerName.includes("pajama") ||
+      lowerName.includes("skirt") ||
+      lowerName.includes("bottom")
+    ) {
+      return "Bottom"
+    }
+    return "Top" // Default to Top if unclear
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setLoading(true)
+  const handleSubmit = async () => {
+    if (!selectedProduct || !quantity || !price) {
+      toast({
+        title: "Validation Error",
+        description: "Please complete all fields.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setIsLoading(true)
 
     try {
-      // Validate form
-      if (!formData.name || !formData.category || !formData.price || !formData.stock) {
-        alert("Please fill in all required fields.")
-        return
+      const category = getProductCategory(selectedProduct)
+      const priceValue = Number.parseFloat(price)
+
+      // Check if the same product already exists (same name, category, and price)
+      const existingItems = await getInventoryItems()
+      const existingItem = existingItems.find(
+        (item) =>
+          item.name.toLowerCase() === selectedProduct.toLowerCase() &&
+          item.category.toLowerCase() === category.toLowerCase() &&
+          Math.abs(item.price - priceValue) < 0.01, // Compare prices with small tolerance for floating point
+      )
+
+      if (existingItem) {
+        // Update existing item by adding quantity
+        const newStock = existingItem.stock + Number.parseInt(quantity)
+        const updatedItem = await updateInventoryItem(existingItem.id, {
+          stock: newStock,
+        })
+
+        if (updatedItem) {
+          toast({
+            title: "Product updated",
+            description: `Added ${quantity} to existing ${selectedProduct}. Total stock: ${newStock}`,
+          })
+          onItemUpdated(updatedItem) // Use the onItemUpdated callback
+        }
+      } else {
+        // Create new product
+        const newItem = await addInventoryItem({
+          name: selectedProduct,
+          category: category,
+          stock: Number.parseInt(quantity),
+          price: priceValue,
+        })
+
+        if (newItem) {
+          toast({
+            title: "Product added successfully",
+            description: `${newItem.name} has been added to your inventory.`,
+          })
+          onItemAdded(newItem)
+        }
       }
 
-      const stock = Number.parseInt(formData.stock)
-      const price = Number.parseFloat(formData.price)
-
-      if (isNaN(stock) || stock < 0) {
-        alert("Please enter a valid stock quantity.")
-        return
-      }
-
-      if (isNaN(price) || price < 0) {
-        alert("Please enter a valid price.")
-        return
-      }
-
-      const sku = formData.sku || generateSKU()
-      const status = determineStatus(stock)
-
-      const newItem = await addInventoryItem({
-        name: formData.name,
-        description: formData.description || null,
-        category: formData.category,
-        price: price,
-        stock: stock,
-        sku: sku,
-        status: status,
-        image_url: formData.image_url || null,
-      })
-
-      await addActivity({
-        action: "create",
-        description: `Added new item: ${newItem?.name || formData.name}`,
-      })
-
-      // Reset form and close modal
-      setFormData({
-        name: "",
-        description: "",
-        category: "",
-        price: "",
-        stock: "1",
-        sku: "",
-        image_url: "",
-      })
-
-      onOpenChange(false)
-      onItemAdded?.()
+      resetForm()
+      setIsOpen(false)
     } catch (error) {
       console.error("Error adding item:", error)
-      alert("Error adding item. Please try again.")
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred. Please try again.",
+        variant: "destructive",
+      })
     } finally {
-      setLoading(false)
+      setIsLoading(false)
+    }
+  }
+
+  const handleCancel = () => {
+    resetForm()
+    setIsOpen(false)
+  }
+
+  const handleBack = () => {
+    if (step === 2) {
+      setStep(1)
+      setQuantity("")
+      setPrice("")
     }
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
+    <Dialog open={isOpen} onOpenChange={setIsOpen}>
+      <DialogTrigger asChild>
+        <Button>
+          <Plus className="h-4 w-4 mr-2" />
+          Add Product
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>Add New Item</DialogTitle>
+          <DialogTitle>Add New Product</DialogTitle>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4 py-4">
-          <div className="grid gap-2">
-            <Label htmlFor="name">Item Name *</Label>
-            <Input
-              id="name"
-              name="name"
-              value={formData.name}
-              onChange={handleChange}
-              required
-              placeholder="Enter item name"
-            />
-          </div>
-
-          <div className="grid gap-2">
-            <Label htmlFor="description">Description</Label>
-            <Textarea
-              id="description"
-              name="description"
-              rows={3}
-              value={formData.description}
-              onChange={handleChange}
-              placeholder="Enter item description"
-            />
-          </div>
-
-          <div className="grid gap-2">
-            <Label htmlFor="category">Category *</Label>
-            <Select value={formData.category} onValueChange={(value) => handleSelectChange("category", value)} required>
-              <SelectTrigger>
-                <SelectValue placeholder="Select Category" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Shirts">Shirts</SelectItem>
-                <SelectItem value="Pants">Pants</SelectItem>
-                <SelectItem value="Dresses">Dresses</SelectItem>
-                <SelectItem value="Sweaters">Sweaters</SelectItem>
-                <SelectItem value="Shorts">Shorts</SelectItem>
-                <SelectItem value="Skirts">Skirts</SelectItem>
-                <SelectItem value="Jackets">Jackets</SelectItem>
-                <SelectItem value="Accessories">Accessories</SelectItem>
-                <SelectItem value="Shoes">Shoes</SelectItem>
-                <SelectItem value="Underwear">Underwear</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="grid gap-2">
-              <Label htmlFor="price">Price ($) *</Label>
-              <Input
-                id="price"
-                name="price"
-                type="number"
-                step="0.01"
-                min="0"
-                value={formData.price}
-                onChange={handleChange}
-                required
-                placeholder="0.00"
-              />
+        {/* Step 1: Product Type Selection */}
+        {step === 1 && !showCustomInput && (
+          <div className="space-y-4">
+            <Label className="text-base font-medium">Select Product Type</Label>
+            <div className="grid grid-cols-2 gap-3 max-h-80 overflow-y-auto">
+              {productTypes.map((product, index) => (
+                <Button
+                  key={`${product.name}-${index}`} // Use index to ensure unique keys
+                  variant="outline"
+                  className="h-12 text-left justify-start"
+                  onClick={() => handleProductSelect(product.name, product.category)}
+                >
+                  {product.name}
+                </Button>
+              ))}
             </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="stock">Stock Quantity *</Label>
-              <Input
-                id="stock"
-                name="stock"
-                type="number"
-                min="0"
-                value={formData.stock}
-                onChange={handleChange}
-                required
-                placeholder="0"
-              />
+            <div className="flex justify-end pt-4">
+              <Button variant="outline" onClick={handleCancel}>
+                Cancel
+              </Button>
             </div>
           </div>
+        )}
 
-          <div className="grid gap-2">
-            <Label htmlFor="sku">SKU</Label>
+        {/* Custom Product Input */}
+        {step === 1 && showCustomInput && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="sm" onClick={() => setShowCustomInput(false)}>
+                <ArrowLeft className="h-4 w-4" />
+              </Button>
+              <Label className="text-base font-medium">Enter Custom Product Type</Label>
+            </div>
             <Input
-              id="sku"
-              name="sku"
-              value={formData.sku}
-              onChange={handleChange}
-              placeholder="Leave empty to auto-generate"
+              value={customProduct}
+              onChange={(e) => setCustomProduct(e.target.value)}
+              placeholder="Enter product type name"
+              onKeyPress={(e) => e.key === "Enter" && handleCustomProductSubmit()}
             />
-            <p className="text-xs text-gray-500">If left empty, a SKU will be automatically generated</p>
+            <div className="flex justify-end space-x-2 pt-4">
+              <Button variant="outline" onClick={handleCancel}>
+                Cancel
+              </Button>
+              <Button onClick={handleCustomProductSubmit} disabled={!customProduct.trim()}>
+                Continue
+              </Button>
+            </div>
           </div>
+        )}
 
-          <div className="grid gap-2">
-            <Label htmlFor="image_url">Image URL</Label>
-            <Input
-              id="image_url"
-              name="image_url"
-              type="url"
-              placeholder="https://example.com/image.jpg"
-              value={formData.image_url}
-              onChange={handleChange}
-            />
+        {/* Step 2: Quantity and Price Input */}
+        {step === 2 && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="sm" onClick={handleBack}>
+                <ArrowLeft className="h-4 w-4" />
+              </Button>
+              <Label className="text-base font-medium">Enter Details</Label>
+            </div>
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">
+                Selected: <span className="font-medium">{selectedProduct}</span>
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="quantity">Quantity *</Label>
+                  <Input
+                    id="quantity"
+                    type="number"
+                    min="0"
+                    value={quantity}
+                    onChange={(e) => setQuantity(e.target.value)}
+                    placeholder="0"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="price">Price *</Label>
+                  <Input
+                    id="price"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={price}
+                    onChange={(e) => setPrice(e.target.value)}
+                    placeholder="0.00"
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end space-x-2 pt-4">
+              <Button variant="outline" onClick={handleCancel}>
+                Cancel
+              </Button>
+              <Button onClick={handleSubmit} disabled={isLoading || !quantity || !price}>
+                {isLoading ? "Adding..." : "Add Product"}
+              </Button>
+            </div>
           </div>
-
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={loading}>
-              {loading ? "Adding..." : "Add Item"}
-            </Button>
-          </DialogFooter>
-        </form>
+        )}
       </DialogContent>
     </Dialog>
   )

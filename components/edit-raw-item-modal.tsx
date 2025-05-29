@@ -8,51 +8,48 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { updateInventoryItem, type InventoryItem } from "@/lib/database"
+import { updateRawMaterial, type RawMaterial } from "@/lib/database"
 import { useToast } from "@/hooks/use-toast"
 
-interface EditItemModalProps {
-  item: InventoryItem
+interface EditRawItemModalProps {
+  material: RawMaterial
   onClose: () => void
   onItemUpdated: () => void
 }
 
-export default function EditItemModal({ item, onClose, onItemUpdated }: EditItemModalProps) {
+export default function EditRawItemModal({ material, onClose, onItemUpdated }: EditRawItemModalProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [formData, setFormData] = useState({
     name: "",
+    quantity: "",
     category: "",
-    stock: "",
-    price: "",
   })
   const { toast } = useToast()
 
   useEffect(() => {
-    if (item) {
+    if (material) {
       setFormData({
-        name: item.name,
-        category: item.category,
-        price: item.price.toString(),
-        stock: item.stock.toString(),
+        name: material.name,
+        quantity: material.quantity.toString(),
+        category: material.category || "",
       })
     }
-  }, [item])
+  }, [material])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
 
     try {
-      const success = await updateInventoryItem(item.id, {
+      const success = await updateRawMaterial(material.id, {
         name: formData.name,
+        quantity: Number.parseFloat(formData.quantity),
         category: formData.category,
-        price: Number.parseFloat(formData.price),
-        stock: Number.parseInt(formData.stock),
       })
 
       if (success) {
         toast({
-          title: "Product updated successfully",
+          title: "Raw material updated successfully",
           description: `${formData.name} has been updated.`,
         })
         onClose()
@@ -60,15 +57,15 @@ export default function EditItemModal({ item, onClose, onItemUpdated }: EditItem
       } else {
         toast({
           title: "Error",
-          description: "Failed to update product. Please try again.",
+          description: "Failed to update raw material. Please try again.",
           variant: "destructive",
         })
       }
     } catch (error) {
-      console.error("Error updating item:", error)
+      console.error("Error updating raw material:", error)
       toast({
         title: "Error",
-        description: "Failed to update product. Please try again.",
+        description: "Failed to update raw material. Please try again.",
         variant: "destructive",
       })
     } finally {
@@ -76,22 +73,36 @@ export default function EditItemModal({ item, onClose, onItemUpdated }: EditItem
     }
   }
 
-  const categories = ["Top", "Bottom"]
+  const categories = ["Fabric", "Sewing"]
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>Edit Product</DialogTitle>
+          <DialogTitle>Edit Raw Material</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <Label htmlFor="name">Product Name *</Label>
+            <Label htmlFor="name">Material Name *</Label>
             <Input
               id="name"
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              placeholder="Enter product name"
+              placeholder="Enter material name"
+              required
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="quantity">Quantity *</Label>
+            <Input
+              id="quantity"
+              type="number"
+              step="0.01"
+              min="0"
+              value={formData.quantity}
+              onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
+              placeholder="0"
               required
             />
           </div>
@@ -112,40 +123,12 @@ export default function EditItemModal({ item, onClose, onItemUpdated }: EditItem
             </Select>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="stock">Stock Quantity *</Label>
-              <Input
-                id="stock"
-                type="number"
-                min="0"
-                value={formData.stock}
-                onChange={(e) => setFormData({ ...formData, stock: e.target.value })}
-                placeholder="0"
-                required
-              />
-            </div>
-            <div>
-              <Label htmlFor="price">Price *</Label>
-              <Input
-                id="price"
-                type="number"
-                min="0"
-                step="0.01"
-                value={formData.price}
-                onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-                placeholder="0.00"
-                required
-              />
-            </div>
-          </div>
-
           <div className="flex justify-end space-x-2 pt-4">
             <Button type="button" variant="outline" onClick={onClose}>
               Cancel
             </Button>
             <Button type="submit" disabled={isLoading}>
-              {isLoading ? "Updating..." : "Update Product"}
+              {isLoading ? "Updating..." : "Update Material"}
             </Button>
           </div>
         </form>

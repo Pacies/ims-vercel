@@ -14,33 +14,44 @@ if (isConfigured) {
   // Use real Supabase client when properly configured
   supabase = createClient(supabaseUrl!, supabaseAnonKey!)
 } else {
-  // Create a mock client for preview/development
-  console.warn("Supabase not configured. Using offline mode.")
+  // For development, we'll still try to create a client with fallback values
+  // This allows the app to work even without env vars set
+  console.warn("Supabase environment variables not found. Using fallback configuration.")
 
-  supabase = {
-    from: (table: string) => ({
-      select: (columns?: string, options?: any) => ({
-        eq: () => ({ data: [], error: null }),
-        lt: () => ({ data: [], error: null }),
-        order: () => ({ data: [], error: null }),
-        limit: () => ({ data: [], error: null }),
-        then: (callback: any) => callback({ data: [], error: null }),
+  // Try to use the URL from the screenshot or fallback
+  const fallbackUrl = "https://zjhjxzhyoeuxedbyhmeji.supabase.co"
+  const fallbackKey = "your-anon-key-here" // You'll need to replace this with your actual anon key
+
+  try {
+    supabase = createClient(fallbackUrl, fallbackKey)
+  } catch (error) {
+    console.error("Failed to create Supabase client:", error)
+    // Create a mock client as last resort
+    supabase = {
+      from: (table: string) => ({
+        select: (columns?: string, options?: any) => ({
+          eq: () => ({ data: [], error: null }),
+          lt: () => ({ data: [], error: null }),
+          order: () => ({ data: [], error: null }),
+          limit: () => ({ data: [], error: null }),
+          then: (callback: any) => callback({ data: [], error: null }),
+        }),
+        insert: (data: any) => ({ data: null, error: null }),
+        update: (data: any) => ({
+          eq: () => ({ data: null, error: null }),
+        }),
+        delete: () => ({
+          eq: () => ({ data: null, error: null }),
+        }),
+        upsert: (data: any) => ({ data: null, error: null }),
       }),
-      insert: (data: any) => ({ data: null, error: null }),
-      update: (data: any) => ({
-        eq: () => ({ data: null, error: null }),
-      }),
-      delete: () => ({
-        eq: () => ({ data: null, error: null }),
-      }),
-      upsert: (data: any) => ({ data: null, error: null }),
-    }),
-    auth: {
-      signUp: () => Promise.resolve({ data: null, error: null }),
-      signInWithPassword: () => Promise.resolve({ data: null, error: null }),
-      signOut: () => Promise.resolve({ error: null }),
-      getUser: () => Promise.resolve({ data: { user: null }, error: null }),
-    },
+      auth: {
+        signUp: () => Promise.resolve({ data: null, error: null }),
+        signInWithPassword: () => Promise.resolve({ data: null, error: null }),
+        signOut: () => Promise.resolve({ error: null }),
+        getUser: () => Promise.resolve({ data: { user: null }, error: null }),
+      },
+    }
   }
 }
 
@@ -97,8 +108,8 @@ export interface RawMaterial {
   name: string
   description: string | null
   supplier: string | null
-  cost: number
-  stock: number
+  cost_per_unit: number
+  quantity: number
   unit: string
   status: "available" | "low-stock" | "out-of-stock"
   created_at: string

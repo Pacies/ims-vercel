@@ -85,9 +85,11 @@ function FloatingParticles() {
           className="absolute w-1 h-1 bg-white/60 rounded-full"
           style={{
             left: `${Math.random() * 100}%`,
-            animationDelay: `${Math.random() * 3}s`,
+            animationName: "floatUp",
             animationDuration: `${3 + Math.random() * 3}s`,
-            animation: "floatUp linear infinite",
+            animationTimingFunction: "linear",
+            animationIterationCount: "infinite",
+            animationDelay: `${Math.random() * 3}s`,
           }}
         />
       ))}

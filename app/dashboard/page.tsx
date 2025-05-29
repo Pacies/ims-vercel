@@ -1,51 +1,81 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { motion } from "framer-motion"
-import { Package, ShoppingCart, TrendingUp, AlertTriangle } from "lucide-react"
-import MainLayout from "@/components/main-layout"
-import PageHeader from "@/components/page-header"
+import { useState, useEffect } from "react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Package, ShoppingCart, TrendingUp, AlertTriangle, Wrench } from "lucide-react"
+import {
+  getInventoryItems,
+  getRawMaterials,
+  getOrders,
+  getActivities,
+  type InventoryItem,
+  type RawMaterial,
+  type Order,
+  type Activity,
+} from "@/lib/database"
 import StatCard from "@/components/stat-card"
 import ActivityList from "@/components/activity-list"
 import AlertList from "@/components/alert-list"
-import DatabaseStatus from "@/components/database-status"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { getDashboardStats, getLowStockItems } from "@/lib/database"
+import MainLayout from "@/components/main-layout"
 
-export default function DashboardPage() {
-  const [stats, setStats] = useState({
-    totalItems: 0,
-    categories: 0,
-    lowStockItems: 0,
-    totalOrders: 0,
-    totalValue: 0,
-  })
-  const [lowStockItems, setLowStockItems] = useState([])
-  const [loading, setLoading] = useState(true)
+export default function Dashboard() {
+  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([])
+  const [rawMaterials, setRawMaterials] = useState<RawMaterial[]>([])
+  const [orders, setOrders] = useState<Order[]>([])
+  const [activities, setActivities] = useState<Activity[]>([])
+  const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    loadDashboardData()
+    async function loadData() {
+      try {
+        const [itemsData, materialsData, ordersData, activitiesData] = await Promise.all([
+          getInventoryItems(),
+          getRawMaterials(),
+          getOrders(),
+          getActivities(),
+        ])
+
+        setInventoryItems(itemsData)
+        setRawMaterials(materialsData)
+        setOrders(ordersData)
+        setActivities(activitiesData)
+      } catch (error) {
+        console.error("Error loading dashboard data:", error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    loadData()
   }, [])
 
-  const loadDashboardData = async () => {
-    try {
-      const [dashboardStats, lowStock] = await Promise.all([getDashboardStats(), getLowStockItems()])
+  // Calculate statistics
+  const totalProducts = inventoryItems.length
+  const totalRawMaterials = rawMaterials.length
+  const lowStockProducts = inventoryItems.filter((item) => item.status === "low-stock").length
+  const lowStockRawMaterials = rawMaterials.filter((material) => material.status === "low-stock").length
+  const totalOrders = orders.length
+  const pendingOrders = orders.filter((order) => order.status === "pending").length
+  const totalValue = inventoryItems.reduce((sum, item) => sum + item.price * item.stock, 0)
 
-      setStats(dashboardStats)
-      setLowStockItems(lowStock)
-    } catch (error) {
-      console.error("Error loading dashboard data:", error)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  if (loading) {
+  if (isLoading) {
     return (
       <MainLayout>
-        <PageHeader title="Dashboard" />
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          {[...Array(4)].map((_, i) => (
+            <Card key={i} className="animate-pulse">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <div className="h-4 bg-gray-200 rounded w-24"></div>
+                <div className="h-4 w-4 bg-gray-200 rounded"></div>
+              </CardHeader>
+              <CardContent>
+                <div className="h-8 bg-gray-200 rounded w-16 mb-2"></div>
+                <div className="h-3 bg-gray-200 rounded w-32"></div>
+              </CardContent>
+            </Card>
+          ))}
         </div>
       </MainLayout>
     )
@@ -53,62 +83,121 @@ export default function DashboardPage() {
 
   return (
     <MainLayout>
-      <PageHeader title="Dashboard" />
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+            <p className="text-muted-foreground">Welcome to your inventory management system</p>
+          </div>
+        </div>
 
-      {/* Database Status */}
-      <div className="mb-6">
-        <DatabaseStatus />
-      </div>
-
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <StatCard value={stats.totalItems} label="Total Items" icon={<Package className="h-6 w-6" />} delay={0.1} />
-        <StatCard
-          value={stats.totalOrders}
-          label="Total Orders"
-          icon={<ShoppingCart className="h-6 w-6" />}
-          delay={0.2}
-        />
-        <StatCard
-          value={stats.lowStockItems}
-          label="Low Stock Alerts"
-          icon={<AlertTriangle className="h-6 w-6" />}
-          delay={0.3}
-          variant={stats.lowStockItems > 0 ? "warning" : "default"}
-        />
-        <StatCard
-          value={`$${stats.totalValue.toLocaleString()}`}
-          label="Total Value"
-          icon={<TrendingUp className="h-6 w-6" />}
-          delay={0.4}
-        />
-      </div>
-
-      {/* Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Recent Activity */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}>
-          <Card>
-            <CardHeader>
-              <CardTitle>Recent Activity</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ActivityList />
-            </CardContent>
-          </Card>
-        </motion.div>
+        {/* Statistics Cards */}
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <StatCard
+            value={totalProducts.toString()}
+            label="Total Products"
+            icon={<Package className="w-6 h-6" />}
+            variant={totalProducts > 0 ? "success" : "default"}
+          />
+          <StatCard
+            value={totalRawMaterials.toString()}
+            label="Raw Materials"
+            icon={<Wrench className="w-6 h-6" />}
+            variant={totalRawMaterials > 0 ? "success" : "default"}
+          />
+          <StatCard
+            value={totalOrders.toString()}
+            label="Total Orders"
+            icon={<ShoppingCart className="w-6 h-6" />}
+            variant={pendingOrders > 0 ? "warning" : "default"}
+          />
+          <StatCard
+            value={`$${totalValue.toLocaleString()}`}
+            label="Inventory Value"
+            icon={<TrendingUp className="w-6 h-6" />}
+            variant="success"
+          />
+        </div>
 
         {/* Alerts */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6 }}>
+        {(lowStockProducts > 0 || lowStockRawMaterials > 0) && (
           <Card>
             <CardHeader>
-              <CardTitle>Alerts & Notifications</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-yellow-500" />
+                Inventory Alerts
+              </CardTitle>
+              <CardDescription>Items that need your attention</CardDescription>
             </CardHeader>
             <CardContent>
-              <AlertList lowStockItems={lowStockItems} />
+              <AlertList
+                lowStockProducts={inventoryItems.filter((item) => item.status === "low-stock")}
+                lowStockRawMaterials={rawMaterials.filter((material) => material.status === "low-stock")}
+              />
             </CardContent>
           </Card>
-        </motion.div>
+        )}
+
+        {/* Main Content */}
+        <div className="grid gap-6">
+          <Tabs defaultValue="activity" className="space-y-4">
+            <TabsList>
+              <TabsTrigger value="activity">Recent Activity</TabsTrigger>
+              <TabsTrigger value="orders">Recent Orders</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="activity" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Recent Activity</CardTitle>
+                  <CardDescription>Latest actions in your inventory system</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ActivityList activities={activities} />
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="orders" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Recent Orders</CardTitle>
+                  <CardDescription>Latest customer orders</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {orders.slice(0, 5).map((order) => (
+                      <div key={order.id} className="flex items-center justify-between p-4 border rounded-lg">
+                        <div>
+                          <p className="font-medium">{order.order_number}</p>
+                          <p className="text-sm text-muted-foreground">{order.customer_name}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-medium">${order.total}</p>
+                          <Badge
+                            variant={
+                              order.status === "delivered"
+                                ? "default"
+                                : order.status === "shipped"
+                                  ? "secondary"
+                                  : order.status === "processing"
+                                    ? "outline"
+                                    : order.status === "cancelled"
+                                      ? "destructive"
+                                      : "secondary"
+                            }
+                          >
+                            {order.status}
+                          </Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
+        </div>
       </div>
     </MainLayout>
   )

@@ -1,58 +1,61 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { motion } from "framer-motion"
-import { Package, Plus, Search, Filter, Edit, Trash2, TrendingUp, DollarSign } from "lucide-react"
-import MainLayout from "@/components/main-layout"
-import PageHeader from "@/components/page-header"
-import { Card, CardContent } from "@/components/ui/card"
+import { useState, useEffect, useCallback } from "react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import StatCard from "@/components/stat-card"
+import { Search, Edit, Trash2, Package, RefreshCw } from "lucide-react"
+import { getInventoryItems, deleteInventoryItem, type InventoryItem } from "@/lib/database"
+import { useToast } from "@/hooks/use-toast"
 import AddItemModal from "@/components/add-item-modal"
 import EditItemModal from "@/components/edit-item-modal"
-import { getInventoryItems, deleteInventoryItem, addActivity } from "@/lib/database"
-import type { InventoryItem } from "@/lib/supabaseClient"
+import PageHeader from "@/components/page-header"
+import MainLayout from "@/components/main-layout"
 
-export default function ProductsPage() {
-  const [items, setItems] = useState<InventoryItem[]>([])
+export default function ProductInventoryPage() {
+  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([])
   const [filteredItems, setFilteredItems] = useState<InventoryItem[]>([])
-  const [loading, setLoading] = useState(true)
-  const [addItemOpen, setAddItemOpen] = useState(false)
-  const [editItemOpen, setEditItemOpen] = useState(false)
-  const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
-  const [categoryFilter, setCategoryFilter] = useState("all")
-  const [sortBy, setSortBy] = useState("name")
+  const [categoryFilter, setCategoryFilter] = useState<string>("all")
+  const [statusFilter, setStatusFilter] = useState<string>("all")
+  const [editingItem, setEditingItem] = useState<InventoryItem | null>(null)
+  const { toast } = useToast()
 
-  useEffect(() => {
-    loadItems()
-  }, [])
-
-  useEffect(() => {
-    filterAndSortItems()
-  }, [items, searchTerm, categoryFilter, sortBy])
-
-  const loadItems = async () => {
+  const loadInventoryItems = useCallback(async () => {
+    setIsLoading(true)
     try {
       const data = await getInventoryItems()
-      setItems(data)
+      setInventoryItems(data)
     } catch (error) {
-      console.error("Error loading items:", error)
+      console.error("Error loading inventory items:", error)
+      toast({
+        title: "Error",
+        description: "Failed to load inventory items. Please try again.",
+        variant: "destructive",
+      })
     } finally {
-      setLoading(false)
+      setIsLoading(false)
     }
-  }
+  }, [toast])
 
-  const filterAndSortItems = () => {
-    let filtered = items
+  useEffect(() => {
+    loadInventoryItems()
+  }, [loadInventoryItems])
+
+  const categories = [...new Set(inventoryItems.map((item) => item.category))]
+
+  useEffect(() => {
+    let filtered = inventoryItems
 
     if (searchTerm) {
       filtered = filtered.filter(
         (item) =>
           item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          item.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
           item.category.toLowerCase().includes(searchTerm.toLowerCase()),
       )
     }
@@ -61,69 +64,63 @@ export default function ProductsPage() {
       filtered = filtered.filter((item) => item.category === categoryFilter)
     }
 
-    // Sort items
-    filtered.sort((a, b) => {
-      switch (sortBy) {
-        case "name":
-          return a.name.localeCompare(b.name)
-        case "price":
-          return b.price - a.price
-        case "stock":
-          return b.stock - a.stock
-        case "category":
-          return a.category.localeCompare(b.category)
-        default:
-          return 0
-      }
-    })
+    if (statusFilter !== "all") {
+      filtered = filtered.filter((item) => item.status === statusFilter)
+    }
 
     setFilteredItems(filtered)
+  }, [inventoryItems, searchTerm, categoryFilter, statusFilter])
+
+  const handleItemAdded = (newItem: InventoryItem) => {
+    setInventoryItems((prev) => [newItem, ...prev])
   }
 
-  const handleDeleteItem = async (item: InventoryItem) => {
-    if (confirm(`Are you sure you want to delete "${item.name}"?`)) {
-      try {
-        await deleteInventoryItem(item.id)
-        await addActivity({
-          action: "delete",
-          description: `Deleted product: ${item.name}`,
+  const handleItemUpdated = (updatedItem: InventoryItem) => {
+    setInventoryItems((prev) => prev.map((item) => (item.id === updatedItem.id ? updatedItem : item)))
+  }
+
+  const handleDelete = async (id: number, name: string) => {
+    if (window.confirm(`Are you sure you want to delete "${name}"?`)) {
+      const success = await deleteInventoryItem(id)
+      if (success) {
+        toast({
+          title: "Product deleted",
+          description: `${name} has been removed from your inventory.`,
         })
-        loadItems()
-      } catch (error) {
-        console.error("Error deleting item:", error)
-        alert("Error deleting item")
+        setInventoryItems((prev) => prev.filter((item) => item.id !== id))
+      } else {
+        toast({
+          title: "Error",
+          description: "Failed to delete product. Please try again.",
+          variant: "destructive",
+        })
       }
     }
-  }
-
-  const handleEditItem = (item: InventoryItem) => {
-    setSelectedItem(item)
-    setEditItemOpen(true)
   }
 
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "in-stock":
-        return <Badge className="bg-green-100 text-green-800">In Stock</Badge>
+        return <Badge variant="default">In Stock</Badge>
       case "low-stock":
-        return <Badge className="bg-yellow-100 text-yellow-800">Low Stock</Badge>
+        return (
+          <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">
+            Low Stock
+          </Badge>
+        )
       case "out-of-stock":
-        return <Badge className="bg-red-100 text-red-800">Out of Stock</Badge>
+        return <Badge variant="destructive">Out of Stock</Badge>
       default:
-        return <Badge>{status}</Badge>
+        return <Badge variant="outline">{status}</Badge>
     }
   }
 
-  const categories = [...new Set(items.map((item) => item.category))]
-  const totalValue = items.reduce((sum, item) => sum + item.price * item.stock, 0)
-  const averagePrice = items.length > 0 ? items.reduce((sum, item) => sum + item.price, 0) / items.length : 0
-
-  if (loading) {
+  if (isLoading && inventoryItems.length === 0) {
     return (
       <MainLayout>
-        <PageHeader title="Products" />
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <div className="animate-pulse space-y-4">
+          <div className="h-8 bg-gray-200 rounded w-48"></div>
+          <div className="h-64 bg-gray-200 rounded"></div>
         </div>
       </MainLayout>
     )
@@ -131,32 +128,28 @@ export default function ProductsPage() {
 
   return (
     <MainLayout>
-      <PageHeader title="Products" />
+      <div className="space-y-6">
+        <PageHeader title="Products" description="Manage your finished products and inventory" icon={Package} />
 
-      {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-        <StatCard value={items.length} label="Total Products" icon={<Package className="h-6 w-6" />} delay={0.1} />
-        <StatCard value={categories.length} label="Categories" icon={<Filter className="h-6 w-6" />} delay={0.2} />
-        <StatCard
-          value={`$${averagePrice.toFixed(2)}`}
-          label="Average Price"
-          icon={<DollarSign className="h-6 w-6" />}
-          delay={0.3}
-        />
-        <StatCard
-          value={`$${totalValue.toLocaleString()}`}
-          label="Total Value"
-          icon={<TrendingUp className="h-6 w-6" />}
-          delay={0.4}
-        />
-      </div>
-
-      {/* Controls */}
-      <Card className="mb-6">
-        <CardContent className="p-6">
-          <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
-            <div className="flex flex-col md:flex-row gap-4 flex-1">
-              <div className="relative flex-1 max-w-md">
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Product Inventory</CardTitle>
+                <CardDescription>Track and manage your finished products</CardDescription>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="icon" onClick={loadInventoryItems} disabled={isLoading}>
+                  <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
+                </Button>
+                <AddItemModal onItemAdded={handleItemAdded} onItemUpdated={handleItemUpdated} />
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {/* Filters */}
+            <div className="flex flex-col sm:flex-row gap-4 mb-6">
+              <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
                 <Input
                   placeholder="Search products..."
@@ -165,138 +158,103 @@ export default function ProductsPage() {
                   className="pl-10"
                 />
               </div>
-
               <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                <SelectTrigger className="w-48">
+                <SelectTrigger className="w-full sm:w-48">
                   <SelectValue placeholder="Filter by category" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Categories</SelectItem>
-                  {categories.map((category) => (
-                    <SelectItem key={category} value={category}>
+                  {categories.map((category, index) => (
+                    <SelectItem key={`${category}-${index}`} value={category}>
                       {category}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-
-              <Select value={sortBy} onValueChange={setSortBy}>
-                <SelectTrigger className="w-48">
-                  <SelectValue placeholder="Sort by" />
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-full sm:w-48">
+                  <SelectValue placeholder="Filter by status" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="name">Name</SelectItem>
-                  <SelectItem value="price">Price (High to Low)</SelectItem>
-                  <SelectItem value="stock">Stock (High to Low)</SelectItem>
-                  <SelectItem value="category">Category</SelectItem>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="in-stock">In Stock</SelectItem>
+                  <SelectItem value="low-stock">Low Stock</SelectItem>
+                  <SelectItem value="out-of-stock">Out of Stock</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
-            <Button onClick={() => setAddItemOpen(true)} className="bg-blue-600 hover:bg-blue-700">
-              <Plus className="h-4 w-4 mr-2" />
-              Add Product
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+            {/* Products Table */}
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>SKU</TableHead>
+                    <TableHead>Product</TableHead>
+                    <TableHead>Category</TableHead>
+                    <TableHead className="pr-8">Stock</TableHead>
+                    <TableHead className="pr-8">Price</TableHead>
+                    <TableHead className="pl-6">Status</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredItems.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                        {inventoryItems.length === 0
+                          ? "No products found. Add your first product to get started."
+                          : "No products match your search criteria."}
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    filteredItems.map((item, index) => (
+                      <TableRow key={`${item.id}-${index}`}>
+                        <TableCell className="font-mono text-sm">{item.sku}</TableCell>
+                        <TableCell>
+                          <div>
+                            <p className="font-medium">{item.name}</p>
+                            {item.description && <p className="text-sm text-muted-foreground">{item.description}</p>}
+                          </div>
+                        </TableCell>
+                        <TableCell>{item.category}</TableCell>
+                        <TableCell className="pr-8">{item.stock}</TableCell>
+                        <TableCell className="pr-8">${item.price.toFixed(2)}</TableCell>
+                        <TableCell className="pl-6">{getStatusBadge(item.status)}</TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <Button variant="ghost" size="sm" onClick={() => setEditingItem(item)}>
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => handleDelete(item.id, item.name)}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
 
-      {/* Products Grid */}
-      {filteredItems.length === 0 ? (
-        <Card>
-          <CardContent className="p-12 text-center">
-            <Package className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No products found</h3>
-            <p className="text-gray-500 mb-4">
-              {items.length === 0
-                ? "Get started by adding your first product."
-                : "Try adjusting your search or filter criteria."}
-            </p>
-            {items.length === 0 && (
-              <Button onClick={() => setAddItemOpen(true)} className="bg-blue-600 hover:bg-blue-700">
-                <Plus className="h-4 w-4 mr-2" />
-                Add Your First Product
-              </Button>
-            )}
+            {/* Summary */}
+            <div className="mt-6 flex items-center justify-between text-sm text-muted-foreground">
+              <p>
+                Showing {filteredItems.length} of {inventoryItems.length} products
+              </p>
+              <p>
+                Total value: ${inventoryItems.reduce((sum, item) => sum + item.price * item.stock, 0).toLocaleString()}
+              </p>
+            </div>
           </CardContent>
         </Card>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {filteredItems.map((item, index) => (
-            <motion.div
-              key={item.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, delay: index * 0.05 }}
-            >
-              <Card className="h-full hover:shadow-lg transition-shadow">
-                <CardContent className="p-6">
-                  <div className="aspect-square bg-gray-100 rounded-lg mb-4 flex items-center justify-center">
-                    {item.image_url ? (
-                      <img
-                        src={item.image_url || "/placeholder.svg"}
-                        alt={item.name}
-                        className="w-full h-full object-cover rounded-lg"
-                      />
-                    ) : (
-                      <Package className="h-12 w-12 text-gray-400" />
-                    )}
-                  </div>
 
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex-1">
-                      <h3 className="font-semibold text-gray-900 mb-1">{item.name}</h3>
-                      <p className="text-sm text-gray-500 mb-2">{item.category}</p>
-                    </div>
-                    {getStatusBadge(item.status)}
-                  </div>
-
-                  <div className="space-y-2 mb-4">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">Price:</span>
-                      <span className="font-semibold text-lg">${item.price.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">Stock:</span>
-                      <span className="font-medium">{item.stock} units</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">Value:</span>
-                      <span className="font-medium">${(item.price * item.stock).toFixed(2)}</span>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="sm" className="flex-1" onClick={() => handleEditItem(item)}>
-                      <Edit className="h-3 w-3 mr-1" />
-                      Edit
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                      onClick={() => handleDeleteItem(item)}
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-          ))}
-        </div>
-      )}
-
-      <AddItemModal open={addItemOpen} onOpenChange={setAddItemOpen} onItemAdded={loadItems} />
-
-      {selectedItem && (
-        <EditItemModal
-          open={editItemOpen}
-          onOpenChange={setEditItemOpen}
-          item={selectedItem}
-          onItemUpdated={loadItems}
-        />
-      )}
+        {/* Edit Modal */}
+        {editingItem && (
+          <EditItemModal item={editingItem} onClose={() => setEditingItem(null)} onItemUpdated={handleItemUpdated} />
+        )}
+      </div>
     </MainLayout>
   )
 }

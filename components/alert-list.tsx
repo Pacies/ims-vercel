@@ -1,26 +1,33 @@
 "use client"
 
 import { motion } from "framer-motion"
-import { AlertTriangle, Package } from "lucide-react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { AlertTriangle, Package, Wrench } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import type { InventoryItem } from "@/lib/supabaseClient"
+import type { InventoryItem, RawMaterial } from "@/lib/database"
 
 interface AlertListProps {
-  lowStockItems?: InventoryItem[]
+  lowStockProducts?: InventoryItem[]
+  lowStockRawMaterials?: RawMaterial[]
 }
 
-export default function AlertList({ lowStockItems = [] }: AlertListProps) {
+export default function AlertList({ lowStockProducts = [], lowStockRawMaterials = [] }: AlertListProps) {
   const alerts = [
-    ...lowStockItems.map((item) => ({
-      id: `low-stock-${item.id}`,
+    ...lowStockProducts.map((item) => ({
+      id: `low-stock-product-${item.id}`,
       type: "warning" as const,
-      title: "Low Stock Alert",
+      title: "Low Stock Alert - Product",
       message: `${item.name} is running low (${item.stock} remaining)`,
       time: "Now",
       icon: <Package className="h-4 w-4" />,
     })),
-    // Add other alert types here if needed
+    ...lowStockRawMaterials.map((material) => ({
+      id: `low-stock-material-${material.id}`,
+      type: "warning" as const,
+      title: "Low Stock Alert - Raw Material",
+      message: `${material.name} is running low (${material.quantity} ${material.unit} remaining)`,
+      time: "Now",
+      icon: <Wrench className="h-4 w-4" />,
+    })),
   ]
 
   if (alerts.length === 0) {
@@ -61,45 +68,35 @@ export default function AlertList({ lowStockItems = [] }: AlertListProps) {
   }
 
   return (
-    <Card className="bg-white border-gray-200">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-gray-800">
-          <AlertTriangle className="h-5 w-5" />
-          Alerts & Notifications
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-3">
-          {alerts.slice(0, 5).map((alert, index) => (
-            <motion.div
-              key={alert.id}
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.3, delay: index * 0.1 }}
-              className="flex items-start gap-3 p-3 rounded-lg border border-gray-100 hover:bg-gray-50 transition-colors"
-            >
-              <div className={`p-2 rounded-full ${getAlertColor(alert.type)}`}>{getAlertIcon(alert.type)}</div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-medium text-gray-900">{alert.title}</h4>
-                  <Badge variant="outline" className="text-xs">
-                    {alert.time}
-                  </Badge>
-                </div>
-                <p className="text-sm text-gray-600 mt-1">{alert.message}</p>
-              </div>
-            </motion.div>
-          ))}
-        </div>
-
-        {alerts.length > 5 && (
-          <div className="mt-4 text-center">
-            <button className="text-sm text-blue-600 hover:text-blue-700 font-medium">
-              View all {alerts.length} alerts
-            </button>
+    <div className="space-y-3">
+      {alerts.slice(0, 5).map((alert, index) => (
+        <motion.div
+          key={alert.id}
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.3, delay: index * 0.1 }}
+          className="flex items-start gap-3 p-3 rounded-lg border border-gray-100 hover:bg-gray-50 transition-colors"
+        >
+          <div className={`p-2 rounded-full ${getAlertColor(alert.type)}`}>{getAlertIcon(alert.type)}</div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-medium text-gray-900">{alert.title}</h4>
+              <Badge variant="outline" className="text-xs">
+                {alert.time}
+              </Badge>
+            </div>
+            <p className="text-sm text-gray-600 mt-1">{alert.message}</p>
           </div>
-        )}
-      </CardContent>
-    </Card>
+        </motion.div>
+      ))}
+
+      {alerts.length > 5 && (
+        <div className="mt-4 text-center">
+          <button className="text-sm text-blue-600 hover:text-blue-700 font-medium">
+            View all {alerts.length} alerts
+          </button>
+        </div>
+      )}
+    </div>
   )
 }
