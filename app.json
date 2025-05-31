@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "2K Inventory System",
+    "plugins": [
+      [
+        "expo-barcode-scanner",
+        {
+          "cameraPermission": "Allow app to access camera for barcode scanning."
+        }
+      ]
+    ],
+    "android": {
+      "permissions": [
+        "android.permission.CAMERA"
+      ]
+    },
+    "ios": {
+      "infoPlist": {
+        "NSCameraUsageDescription": "This app uses the camera to scan barcodes for inventory management."
+      }
+    }
+  }
+}

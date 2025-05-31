@@ -14,106 +14,148 @@ import AddItemModal from "@/components/add-item-modal"
 import EditItemModal from "@/components/edit-item-modal"
 import PageHeader from "@/components/page-header"
 import MainLayout from "@/components/main-layout"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import dynamic from "next/dynamic";
+import ItemQRCode from "@/components/item-qr-code";
+
+const BarcodeScanner = dynamic(() => import("react-qr-barcode-scanner"), { ssr: false });
 
 export default function ProductInventoryPage() {
-  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([])
-  const [filteredItems, setFilteredItems] = useState<InventoryItem[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [searchTerm, setSearchTerm] = useState("")
-  const [categoryFilter, setCategoryFilter] = useState<string>("all")
-  const [statusFilter, setStatusFilter] = useState<string>("all")
-  const [editingItem, setEditingItem] = useState<InventoryItem | null>(null)
-  const { toast } = useToast()
+  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
+  const [filteredItems, setFilteredItems] = useState<InventoryItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
+  const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
+  const [isProcessingBarcode, setIsProcessingBarcode] = useState(false);
+  const [showQRModal, setShowQRModal] = useState(false);
+  const [qrProduct, setQRProduct] = useState<InventoryItem | null>(null);
+  const { toast } = useToast();
 
   const loadInventoryItems = useCallback(async () => {
-    setIsLoading(true)
+    setIsLoading(true);
     try {
-      const data = await getInventoryItems()
-      setInventoryItems(data)
+      const data = await getInventoryItems();
+      setInventoryItems(data);
     } catch (error) {
-      console.error("Error loading inventory items:", error)
+      console.error("Error loading inventory items:", error);
       toast({
         title: "Error",
         description: "Failed to load inventory items. Please try again.",
         variant: "destructive",
-      })
+      });
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }, [toast])
+  }, [toast]);
 
   useEffect(() => {
-    loadInventoryItems()
-  }, [loadInventoryItems])
+    loadInventoryItems();
+  }, [loadInventoryItems]);
 
-  const categories = [...new Set(inventoryItems.map((item) => item.category))]
+  const categories = [...new Set(inventoryItems.map((item) => item.category))];
 
   useEffect(() => {
-    let filtered = inventoryItems
-
+    let filtered = inventoryItems;
     if (searchTerm) {
       filtered = filtered.filter(
         (item) =>
           item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
           item.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          item.category.toLowerCase().includes(searchTerm.toLowerCase()),
-      )
+          item.category.toLowerCase().includes(searchTerm.toLowerCase())
+      );
     }
-
     if (categoryFilter !== "all") {
-      filtered = filtered.filter((item) => item.category === categoryFilter)
+      filtered = filtered.filter((item) => item.category === categoryFilter);
     }
-
     if (statusFilter !== "all") {
-      filtered = filtered.filter((item) => item.status === statusFilter)
+      filtered = filtered.filter((item) => item.status === statusFilter);
     }
-
-    setFilteredItems(filtered)
-  }, [inventoryItems, searchTerm, categoryFilter, statusFilter])
+    setFilteredItems(filtered);
+  }, [inventoryItems, searchTerm, categoryFilter, statusFilter]);
 
   const handleItemAdded = (newItem: InventoryItem) => {
-    setInventoryItems((prev) => [newItem, ...prev])
-  }
+    setInventoryItems((prev) => [newItem, ...prev]);
+  };
 
   const handleItemUpdated = (updatedItem: InventoryItem) => {
-    setInventoryItems((prev) => prev.map((item) => (item.id === updatedItem.id ? updatedItem : item)))
-  }
+    setInventoryItems((prev) => prev.map((item) => (item.id === updatedItem.id ? updatedItem : item)));
+  };
 
   const handleDelete = async (id: number, name: string) => {
     if (window.confirm(`Are you sure you want to delete "${name}"?`)) {
-      const success = await deleteInventoryItem(id)
+      const success = await deleteInventoryItem(id);
       if (success) {
         toast({
           title: "Product deleted",
           description: `${name} has been removed from your inventory.`,
-        })
-        setInventoryItems((prev) => prev.filter((item) => item.id !== id))
+        });
+        setInventoryItems((prev) => prev.filter((item) => item.id !== id));
       } else {
         toast({
           title: "Error",
           description: "Failed to delete product. Please try again.",
           variant: "destructive",
-        })
+        });
       }
     }
-  }
+  };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "in-stock":
-        return <Badge variant="default">In Stock</Badge>
+        return <Badge variant="default">In Stock</Badge>;
       case "low-stock":
         return (
           <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">
             Low Stock
           </Badge>
-        )
+        );
       case "out-of-stock":
-        return <Badge variant="destructive">Out of Stock</Badge>
+        return <Badge variant="destructive">Out of Stock</Badge>;
       default:
-        return <Badge variant="outline">{status}</Badge>
+        return <Badge variant="outline">{status}</Badge>;
     }
-  }
+  };
+
+  // Handle QR/barcode scan
+  const handleBarcodeScanned = async (result: { text: string; format: string } | null) => {
+    if (!result || isProcessingBarcode) return;
+    setIsProcessingBarcode(true);
+    try {
+      let barcode = result.text;
+      let type = result.format;
+      let parsed: any = null;
+      try {
+        parsed = JSON.parse(barcode);
+      } catch (e) {}
+      if (parsed && parsed.type === "item_update" && parsed.itemId) {
+        // Find by itemId (from QR)
+        const product = inventoryItems.find(item => item.id.toString() === parsed.itemId.toString() || item.sku === parsed.itemId);
+        if (product) {
+          toast({ title: 'QR Matched', description: `Found product: ${product.name}` });
+        } else {
+          window.alert('QR code does not match any product.');
+        }
+      } else {
+        // Fallback: treat as barcode (SKU)
+        const product = inventoryItems.find(item => item.sku === barcode);
+        if (product) {
+          toast({ title: 'Barcode Matched', description: `Found product: ${product.name}` });
+        } else {
+          window.alert('Product Not Found. Would you like to add this product?');
+        }
+      }
+      setShowBarcodeScanner(false);
+    } catch (error) {
+      console.error('Barcode processing error:', error);
+      window.alert('Error: Failed to process barcode scan');
+    } finally {
+      setIsProcessingBarcode(false);
+    }
+  };
 
   if (isLoading && inventoryItems.length === 0) {
     return (
@@ -123,14 +165,13 @@ export default function ProductInventoryPage() {
           <div className="h-64 bg-gray-200 rounded"></div>
         </div>
       </MainLayout>
-    )
+    );
   }
 
   return (
     <MainLayout>
       <div className="space-y-6">
         <PageHeader title="Products" description="Manage your finished products and inventory" icon={Package} />
-
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
@@ -182,7 +223,41 @@ export default function ProductInventoryPage() {
                   <SelectItem value="out-of-stock">Out of Stock</SelectItem>
                 </SelectContent>
               </Select>
+              <Button
+                type="button"
+                className="bg-blue-600 text-white"
+                onClick={() => setShowBarcodeScanner(true)}
+                disabled={isProcessingBarcode}
+              >
+                📱 Scan Barcode
+              </Button>
             </div>
+
+            {/* Barcode Scanner Modal */}
+            <Dialog open={showBarcodeScanner} onOpenChange={setShowBarcodeScanner}>
+              <DialogContent className="max-w-lg">
+                <DialogHeader>
+                  <DialogTitle>Scan Barcode</DialogTitle>
+                </DialogHeader>
+                <div className="flex flex-col items-center">
+                  <BarcodeScanner
+                    onUpdate={(err, result) => {
+                      if (result) handleBarcodeScanned(result);
+                    }}
+                    constraints={{ facingMode: "environment" }}
+                    style={{ width: "100%" }}
+                  />
+                  <Button
+                    variant="outline"
+                    className="mt-4"
+                    onClick={() => setShowBarcodeScanner(false)}
+                    disabled={isProcessingBarcode}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
 
             {/* Products Table */}
             <div className="rounded-md border">
@@ -229,6 +304,9 @@ export default function ProductInventoryPage() {
                             <Button variant="ghost" size="sm" onClick={() => handleDelete(item.id, item.name)}>
                               <Trash2 className="h-4 w-4" />
                             </Button>
+                            <Button variant="outline" size="sm" onClick={() => { setQRProduct(item); setShowQRModal(true); }}>
+                              Show QR
+                            </Button>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -237,6 +315,19 @@ export default function ProductInventoryPage() {
                 </TableBody>
               </Table>
             </div>
+
+            {/* QR Modal */}
+            <Dialog open={showQRModal} onOpenChange={setShowQRModal}>
+              <DialogContent className="max-w-xs">
+                <DialogHeader>
+                  <DialogTitle>Product QR Code</DialogTitle>
+                </DialogHeader>
+                {qrProduct && <ItemQRCode itemId={qrProduct.id.toString()} itemName={qrProduct.name} />}
+                <Button className="mt-4 w-full" onClick={() => setShowQRModal(false)}>
+                  Close
+                </Button>
+              </DialogContent>
+            </Dialog>
 
             {/* Summary */}
             <div className="mt-6 flex items-center justify-between text-sm text-muted-foreground">
@@ -249,7 +340,6 @@ export default function ProductInventoryPage() {
             </div>
           </CardContent>
         </Card>
-
         {/* Edit Modal */}
         {editingItem && (
           <EditItemModal item={editingItem} onClose={() => setEditingItem(null)} onItemUpdated={handleItemUpdated} />
