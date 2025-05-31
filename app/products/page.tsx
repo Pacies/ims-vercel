@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Search, Edit, Trash2, Package, RefreshCw } from "lucide-react"
-import { getInventoryItems, deleteInventoryItem, type InventoryItem } from "@/lib/database"
+import { getInventoryItems, deleteInventoryItem, updateInventoryItem, type InventoryItem } from "@/lib/database"
 import { useToast } from "@/hooks/use-toast"
 import AddItemModal from "@/components/add-item-modal"
 import EditItemModal from "@/components/edit-item-modal"
@@ -128,22 +128,44 @@ export default function ProductInventoryPage() {
       let barcode = result.text;
       let type = result.format;
       let parsed: any = null;
+      console.log('[SCAN] Raw barcode:', barcode, 'Format:', type);
       try {
         parsed = JSON.parse(barcode);
-      } catch (e) {}
+        console.log('[SCAN] Parsed QR:', parsed);
+      } catch (e) {
+        console.log('[SCAN] Not a JSON QR, treating as plain barcode');
+      }
       if (parsed && parsed.type === "item_update" && parsed.itemId) {
         // Find by itemId (from QR)
         const product = inventoryItems.find(item => item.id.toString() === parsed.itemId.toString() || item.sku === parsed.itemId);
+        console.log('[SCAN] Matched product by QR:', product);
         if (product) {
-          toast({ title: 'QR Matched', description: `Found product: ${product.name}` });
+          // Increment stock by 1
+          const updatedItem = await updateInventoryItem(product.id, { stock: product.stock + 1 });
+          console.log('[SCAN] Update result:', updatedItem);
+          if (updatedItem) {
+            toast({ title: 'Stock Incremented', description: `Stock for ${product.name} incremented to ${updatedItem.stock}` });
+            handleItemUpdated(updatedItem);
+          } else {
+            toast({ title: 'Error', description: 'Failed to update product stock.', variant: 'destructive' });
+          }
         } else {
           window.alert('QR code does not match any product.');
         }
       } else {
         // Fallback: treat as barcode (SKU)
         const product = inventoryItems.find(item => item.sku === barcode);
+        console.log('[SCAN] Matched product by SKU:', product);
         if (product) {
-          toast({ title: 'Barcode Matched', description: `Found product: ${product.name}` });
+          // Increment stock by 1
+          const updatedItem = await updateInventoryItem(product.id, { stock: product.stock + 1 });
+          console.log('[SCAN] Update result:', updatedItem);
+          if (updatedItem) {
+            toast({ title: 'Stock Incremented', description: `Stock for ${product.name} incremented to ${updatedItem.stock}` });
+            handleItemUpdated(updatedItem);
+          } else {
+            toast({ title: 'Error', description: 'Failed to update product stock.', variant: 'destructive' });
+          }
         } else {
           window.alert('Product Not Found. Would you like to add this product?');
         }
@@ -240,10 +262,18 @@ export default function ProductInventoryPage() {
                   <DialogTitle>Scan Barcode</DialogTitle>
                 </DialogHeader>
                 <div className="flex flex-col items-center">
+                  {/* @ts-ignore: react-qr-barcode-scanner types may be incorrect */}
                   <BarcodeScanner
+                    // @ts-ignore
                     onUpdate={(err, result) => {
-                      if (result) handleBarcodeScanned(result);
+                      if (result) {
+                        // Some versions return a Result object, not plain text
+                        // @ts-ignore
+                        const text = result.getText ? result.getText() : result.text;
+                        handleBarcodeScanned({ text, format: "qr" });
+                      }
                     }}
+                    // @ts-ignore
                     constraints={{ facingMode: "environment" }}
                     style={{ width: "100%" }}
                   />
@@ -259,92 +289,92 @@ export default function ProductInventoryPage() {
               </DialogContent>
             </Dialog>
 
-            {/* Products Table */}
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
+            {/* Product Table */}
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[100px]">SKU</TableHead>
+                  <TableHead>Name</TableHead>
+                  <TableHead className="w-[150px]">Category</TableHead>
+                  <TableHead className="w-[100px]">Status</TableHead>
+                  <TableHead className="w-[100px]">Stock</TableHead>
+                  <TableHead className="w-[100px]">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredItems.length === 0 ? (
                   <TableRow>
-                    <TableHead>SKU</TableHead>
-                    <TableHead>Product</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead className="pr-8">Stock</TableHead>
-                    <TableHead className="pr-8">Price</TableHead>
-                    <TableHead className="pl-6">Status</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableCell colSpan={6} className="text-center py-4">
+                      No products found.
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredItems.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                        {inventoryItems.length === 0
-                          ? "No products found. Add your first product to get started."
-                          : "No products match your search criteria."}
+                ) : (
+                  filteredItems.map((item) => (
+                    <TableRow key={item.id}>
+                      <TableCell className="font-medium">{item.sku}</TableCell>
+                      <TableCell>{item.name}</TableCell>
+                      <TableCell>{item.category}</TableCell>
+                      <TableCell>{getStatusBadge(item.status)}</TableCell>
+                      <TableCell className="text-right">{item.stock}</TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setEditingItem(item)}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleDelete(item.id, item.name)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            onClick={() => { setQRProduct(item); setShowQRModal(true); }}
+                            title="Show QR Code"
+                          >
+                            <span role="img" aria-label="QR">� QR</span>
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
-                  ) : (
-                    filteredItems.map((item, index) => (
-                      <TableRow key={`${item.id}-${index}`}>
-                        <TableCell className="font-mono text-sm">{item.sku}</TableCell>
-                        <TableCell>
-                          <div>
-                            <p className="font-medium">{item.name}</p>
-                            {item.description && <p className="text-sm text-muted-foreground">{item.description}</p>}
-                          </div>
-                        </TableCell>
-                        <TableCell>{item.category}</TableCell>
-                        <TableCell className="pr-8">{item.stock}</TableCell>
-                        <TableCell className="pr-8">${item.price.toFixed(2)}</TableCell>
-                        <TableCell className="pl-6">{getStatusBadge(item.status)}</TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <Button variant="ghost" size="sm" onClick={() => setEditingItem(item)}>
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button variant="ghost" size="sm" onClick={() => handleDelete(item.id, item.name)}>
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                            <Button variant="outline" size="sm" onClick={() => { setQRProduct(item); setShowQRModal(true); }}>
-                              Show QR
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-
-            {/* QR Modal */}
-            <Dialog open={showQRModal} onOpenChange={setShowQRModal}>
-              <DialogContent className="max-w-xs">
-                <DialogHeader>
-                  <DialogTitle>Product QR Code</DialogTitle>
-                </DialogHeader>
-                {qrProduct && <ItemQRCode itemId={qrProduct.id.toString()} itemName={qrProduct.name} />}
-                <Button className="mt-4 w-full" onClick={() => setShowQRModal(false)}>
-                  Close
-                </Button>
-              </DialogContent>
-            </Dialog>
-
-            {/* Summary */}
-            <div className="mt-6 flex items-center justify-between text-sm text-muted-foreground">
-              <p>
-                Showing {filteredItems.length} of {inventoryItems.length} products
-              </p>
-              <p>
-                Total value: ${inventoryItems.reduce((sum, item) => sum + item.price * item.stock, 0).toLocaleString()}
-              </p>
-            </div>
+                  ))
+                )
+                }
+              </TableBody>
+            </Table>
           </CardContent>
         </Card>
-        {/* Edit Modal */}
+
+        {/* Edit Item Modal */}
         {editingItem && (
-          <EditItemModal item={editingItem} onClose={() => setEditingItem(null)} onItemUpdated={handleItemUpdated} />
+          <EditItemModal item={editingItem} onClose={() => setEditingItem(null)} onItemUpdated={() => {}} />
         )}
+
+        {/* QR Code Modal (for future use) */}
+        <Dialog open={showQRModal} onOpenChange={setShowQRModal}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Product QR Code</DialogTitle>
+            </DialogHeader>
+            <div className="flex flex-col items-center">
+              {qrProduct && <ItemQRCode itemId={qrProduct.id.toString()} itemName={qrProduct.name} />}
+              <Button
+                variant="outline"
+                className="mt-4"
+                onClick={() => setShowQRModal(false)}
+              >
+                Close
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </MainLayout>
-  )
+  );
 }

@@ -87,13 +87,13 @@ export async function getCurrentUser(): Promise<User | null> {
 // Helper function to check if user has admin privileges
 export async function isAdmin(): Promise<boolean> {
   const user = await getCurrentUser()
-  return user?.user_type === "admin" && user?.status === "active"
+  return user?.user_type === "admin" && user?.status === "active" ? true : false
 }
 
 // Helper function to check if user has staff or admin privileges
 export async function isStaffOrAdmin(): Promise<boolean> {
   const user = await getCurrentUser()
-  return user?.user_type && ["admin", "staff"].includes(user.user_type) && user?.status === "active"
+  return user?.user_type && ["admin", "staff"].includes(user.user_type) && user?.status === "active" ? true : false
 }
 
 // Database operations for inventory items (products)
