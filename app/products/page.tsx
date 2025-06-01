@@ -249,6 +249,14 @@ export default function ProductInventoryPage() {
                   <SelectItem value="out-of-stock">Out of Stock</SelectItem>
                 </SelectContent>
               </Select>
+              <Button
+                type="button"
+                className="bg-blue-600 text-white"
+                onClick={() => setShowBarcodeScanner(true)}
+                disabled={isProcessingBarcode}
+              >
+                📱 Scan QR/Barcode
+              </Button>
             </div>
 
             {/* Products Table */}
